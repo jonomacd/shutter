@@ -1,0 +1,16 @@
+package messages;
+
+ import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+message request {
+	optional string endpoint = 1 [(gogoproto.nullable) = false];
+	repeated keyvalue headers = 2 [(gogoproto.nullable) = false];
+	optional bytes body = 3 [(gogoproto.nullable) = false];
+	optional string originator = 4 [(gogoproto.nullable) = false];
+	optional string clientTimeout = 5 [(gogoproto.nullable) = false];
+}
+
+message keyvalue {
+		optional string key = 1 [(gogoproto.nullable) = false];
+		optional string value = 2 [(gogoproto.nullable) = false];
+}
