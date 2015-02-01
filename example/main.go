@@ -3,62 +3,48 @@ package main
 import (
 	"fmt"
 	"github.com/jonomacd/shutter"
-	"time"
+	"github.com/jonomacd/shutter/client"
 
-	"github.com/gogo/protobuf/proto"
 	message "github.com/jonomacd/shutter/proto"
-	"gopkg.in/project-iris/iris-go.v1"
+)
+
+var (
+	serviceName string = "uniqueServiceName"
+	endpoint    string = "firstEndpoint"
 )
 
 func main() {
-	shutter.InitializeService("test")
+	shutter.InitializeService(serviceName)
 
-	shutter.ServiceRegistry.Register("first", func(req shutter.Request) ([]byte, error) {
-		fmt.Printf("Got It %s\n", string(req.Data()))
-		return []byte("{}"), nil
-	})
+	shutter.ServiceRegistry.Register(endpoint, TestHandler, &message.Keyvalue{})
 
-	shutter.ServiceRegistry.Register("first1", func(req shutter.Request) ([]byte, error) {
-		fmt.Printf("Got It1 %s\n", string(req.Data()))
-		return []byte("{}1"), nil
-	})
-	fmt.Println("sending")
+	// Run Client
 	send()
 
-	select {}
 }
 
 func send() {
-	req := &message.Request{}
-	req.Body = []byte("Hi There")
-	req.Endpoint = "first"
-	req.Originator = "me"
 
-	b, err := proto.Marshal(req)
-	fmt.Println(err)
-
-	conn, err := iris.Connect(55555)
-	if err != nil {
-		panic(err)
+	toSend := &message.Keyvalue{
+		Key:   "foo",
+		Value: "bar",
 	}
 
-	cruft, err := conn.Request("test", b, time.Second*10)
+	toGet := &message.Keyvalue{}
+
+	err := client.Request(serviceName, endpoint, toSend, toGet)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
 	}
-	fmt.Println("got back", string(cruft))
 
-	req = &message.Request{}
-	req.Body = []byte("Hi There1")
-	req.Endpoint = "first1"
-	req.Originator = "me1"
+	fmt.Printf("Recieved: %s\n", toGet.Value)
 
-	b, err = proto.Marshal(req)
-	fmt.Println(err)
+}
 
-	cruft, err = conn.Request("test", b, time.Second*10)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("got back1", string(cruft))
+func TestHandler(req shutter.Request) (interface{}, error) {
+	r := req.Request().(*message.Keyvalue)
+
+	r.Value = r.Value + " From Handler " + r.Key
+
+	return r, nil
 }

@@ -11,6 +11,18 @@ message request {
 }
 
 message keyvalue {
-		optional string key = 1 [(gogoproto.nullable) = false];
-		optional string value = 2 [(gogoproto.nullable) = false];
+	optional string key = 1 [(gogoproto.nullable) = false];
+	optional string value = 2 [(gogoproto.nullable) = false];
+}
+
+message response {
+	optional string type = 1 [(gogoproto.nullable) = false]; 
+	optional error err = 2 [(gogoproto.nullable) = false];
+	repeated keyvalue headers = 3 [(gogoproto.nullable) = false];
+	optional bytes body = 4 [(gogoproto.nullable) = false];
+}
+
+message error {
+	optional string code = 1 [(gogoproto.nullable) = false];
+	optional string errorText = 2 [(gogoproto.nullable) = false];
 }

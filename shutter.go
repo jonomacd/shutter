@@ -19,7 +19,7 @@ var (
 
 type Registry interface {
 	Name() string
-	Register(string, HandlerFunc) error
+	Register(string, HandlerFunc, interface{}) error
 	GetEndpoint(string) Endpoint
 	iris.ServiceHandler
 }
@@ -27,14 +27,16 @@ type Registry interface {
 type Endpoint interface {
 	Name() string
 	Handler() HandlerFunc
+	Request() interface{}
 }
 
 // TODO Change return type to some kind of response object
-type HandlerFunc func(req Request) ([]byte, error)
+type HandlerFunc func(req Request) (interface{}, error)
 
 type DefaultEndpoint struct {
 	name    string
 	handler HandlerFunc
+	req     interface{}
 }
 
 func (de *DefaultEndpoint) Name() string {
@@ -43,6 +45,10 @@ func (de *DefaultEndpoint) Name() string {
 
 func (de *DefaultEndpoint) Handler() HandlerFunc {
 	return de.handler
+}
+
+func (de *DefaultEndpoint) Request() interface{} {
+	return de.req
 }
 
 // Implements iris.ServiceHandler
@@ -76,10 +82,11 @@ func (dr *DefaultRegistry) Name() string {
 	return dr.name
 }
 
-func (dr *DefaultRegistry) Register(name string, handler HandlerFunc) error {
+func (dr *DefaultRegistry) Register(name string, handler HandlerFunc, req interface{}) error {
 	dr.endpoints[name] = &DefaultEndpoint{
 		name:    name,
 		handler: handler,
+		req:     req,
 	}
 	return nil
 }
@@ -117,11 +124,31 @@ func (dr *DefaultRegistry) HandleRequest(request []byte) ([]byte, error) {
 	in := &message.Request{}
 	err := proto.Unmarshal(request, in)
 	if err != nil {
-		// Figure out how to marshal the error response
-		return nil, err
+		protoRsp := &message.Response{
+			Type: "error",
+			Err: message.Error{
+				Code:      "unmarshal",
+				ErrorText: "Unable to unmarshal request.",
+			},
+		}
+		b, _ := proto.Marshal(protoRsp)
+		return b, nil
 	}
 
-	handlerRequest := NewRequest(in.Originator, in.Endpoint, in.Body, in.Headers)
+	ep := ServiceRegistry.GetEndpoint(in.Endpoint)
+	if ep == nil {
+		protoRsp := &message.Response{
+			Type: "error",
+			Err: message.Error{
+				Code:      "missing",
+				ErrorText: fmt.Sprintf("No endpoint registered for %s", in.Endpoint),
+			},
+		}
+		b, _ := proto.Marshal(protoRsp)
+		return b, nil
+	}
+
+	handlerRequest := NewRequest(in.Originator, in.Endpoint, in.Body, ep.Request(), in.Headers)
 
 	// Set the clientside timeout so that handlers can give up in situations they are running long
 	/*to, _ := time.ParseDuration(in.ClientTimeout)
@@ -130,15 +157,24 @@ func (dr *DefaultRegistry) HandleRequest(request []byte) ([]byte, error) {
 		defer cancel()
 	}*/
 
-	ep := ServiceRegistry.GetEndpoint(in.Endpoint)
-	if ep == nil {
-		// construct endpoint not found response
-		return nil, fmt.Errorf("No Ep!")
-	}
 	rsp, err := ep.Handler()(handlerRequest)
-	// marshal the response and return the reply or the error
 
-	return rsp, err
+	protoRsp := &message.Response{}
+	if err != nil {
+		protoRsp.Type = "error"
+		protoRsp.Err = message.Error{
+			Code:      "internal",
+			ErrorText: err.Error(),
+		}
+	} else {
+		protoRsp.Type = "rsp"
+		rspb, _ := proto.Marshal(rsp.(proto.Message))
+		protoRsp.Body = rspb
+	}
+
+	b, _ := proto.Marshal(protoRsp)
+
+	return b, nil
 }
 
 // Callback invoked whenever a tunnel designated to the service's cluster is

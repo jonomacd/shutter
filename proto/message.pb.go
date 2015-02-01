@@ -11,6 +11,8 @@ It is generated from these files:
 It has these top-level messages:
 	Request
 	Keyvalue
+	Response
+	Error
 */
 package messages
 
@@ -91,6 +93,70 @@ func (m *Keyvalue) GetKey() string {
 func (m *Keyvalue) GetValue() string {
 	if m != nil {
 		return m.Value
+	}
+	return ""
+}
+
+type Response struct {
+	Type             string     `protobuf:"bytes,1,opt,name=type" json:"type"`
+	Err              Error      `protobuf:"bytes,2,opt,name=err" json:"err"`
+	Headers          []Keyvalue `protobuf:"bytes,3,rep,name=headers" json:"headers"`
+	Body             []byte     `protobuf:"bytes,4,opt,name=body" json:"body"`
+	XXX_unrecognized []byte     `json:"-"`
+}
+
+func (m *Response) Reset()         { *m = Response{} }
+func (m *Response) String() string { return proto.CompactTextString(m) }
+func (*Response) ProtoMessage()    {}
+
+func (m *Response) GetType() string {
+	if m != nil {
+		return m.Type
+	}
+	return ""
+}
+
+func (m *Response) GetErr() Error {
+	if m != nil {
+		return m.Err
+	}
+	return Error{}
+}
+
+func (m *Response) GetHeaders() []Keyvalue {
+	if m != nil {
+		return m.Headers
+	}
+	return nil
+}
+
+func (m *Response) GetBody() []byte {
+	if m != nil {
+		return m.Body
+	}
+	return nil
+}
+
+type Error struct {
+	Code             string `protobuf:"bytes,1,opt,name=code" json:"code"`
+	ErrorText        string `protobuf:"bytes,2,opt,name=errorText" json:"errorText"`
+	XXX_unrecognized []byte `json:"-"`
+}
+
+func (m *Error) Reset()         { *m = Error{} }
+func (m *Error) String() string { return proto.CompactTextString(m) }
+func (*Error) ProtoMessage()    {}
+
+func (m *Error) GetCode() string {
+	if m != nil {
+		return m.Code
+	}
+	return ""
+}
+
+func (m *Error) GetErrorText() string {
+	if m != nil {
+		return m.ErrorText
 	}
 	return ""
 }

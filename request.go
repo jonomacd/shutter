@@ -1,6 +1,7 @@
 package shutter
 
 import (
+	"github.com/gogo/protobuf/proto"
 	message "github.com/jonomacd/shutter/proto"
 	"golang.org/x/net/context"
 )
@@ -12,6 +13,7 @@ type Request interface {
 	SetHeader(string, string)
 
 	Data() []byte
+	Request() interface{}
 }
 
 type DefaultRequest struct {
@@ -21,15 +23,20 @@ type DefaultRequest struct {
 	service  string
 	endpoint string
 	body     []byte
+	req      interface{}
 }
 
-func NewRequest(service, endpoint string, body []byte, headers []message.Keyvalue) Request {
+func NewRequest(service, endpoint string, body []byte, reqType interface{}, headers []message.Keyvalue) Request {
 
 	req := &DefaultRequest{
 		service:  service,
 		endpoint: endpoint,
 		body:     body,
 	}
+
+	// Testing... need to deal with errors
+	proto.Unmarshal(body, reqType.(proto.Message))
+	req.req = reqType
 
 	for _, kv := range headers {
 		req.SetHeader(kv.Key, kv.Value)
@@ -51,4 +58,6 @@ func (dr *DefaultRequest) Data() []byte {
 	return dr.body
 }
 
-func (dr *DefaultRequest) Send(service, endpoint string, data []byte) {}
+func (dr *DefaultRequest) Request() interface{} {
+	return dr.req
+}
