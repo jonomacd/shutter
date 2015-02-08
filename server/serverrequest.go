@@ -1,14 +1,11 @@
-package shutter
+package server
 
 import (
 	"github.com/gogo/protobuf/proto"
 	message "github.com/jonomacd/shutter/proto"
-	"golang.org/x/net/context"
 )
 
 type Request interface {
-	context.Context
-
 	GetHeader(string) string
 	SetHeader(string, string)
 
@@ -17,8 +14,6 @@ type Request interface {
 }
 
 type DefaultRequest struct {
-	context.Context
-
 	headers  map[string]string
 	service  string
 	endpoint string
@@ -26,7 +21,7 @@ type DefaultRequest struct {
 	req      interface{}
 }
 
-func NewRequest(service, endpoint string, body []byte, reqType interface{}, headers []message.Keyvalue) Request {
+func NewRequest(service, endpoint string, body []byte, reqType interface{}, headers []message.Keyvalue) (Request, error) {
 
 	req := &DefaultRequest{
 		service:  service,
@@ -34,15 +29,18 @@ func NewRequest(service, endpoint string, body []byte, reqType interface{}, head
 		body:     body,
 	}
 
-	// Testing... need to deal with errors
-	proto.Unmarshal(body, reqType.(proto.Message))
+	err := proto.Unmarshal(body, reqType.(proto.Message))
+	if err != nil {
+		return nil, err
+	}
+
 	req.req = reqType
 
 	for _, kv := range headers {
 		req.SetHeader(kv.Key, kv.Value)
 	}
 
-	return req
+	return req, nil
 
 }
 

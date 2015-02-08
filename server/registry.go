@@ -1,55 +1,30 @@
-package shutter
+package server
 
 import (
-	//"time"
 	"fmt"
-
-	message "github.com/jonomacd/shutter/proto"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	log "github.com/golang/glog"
-	//"golang.org/x/net/context"
+	message "github.com/jonomacd/shutter/proto"
+	"golang.org/x/net/context"
 	"gopkg.in/project-iris/iris-go.v1"
 )
 
 var (
-	ServiceRegistry Registry
-	DefaultPort     int = 55555
+	GlobalRegistry Registry
+	DefaultPort    int = 55555
 )
 
 type Registry interface {
 	Name() string
 	Register(string, HandlerFunc, interface{}) error
 	GetEndpoint(string) Endpoint
-	iris.ServiceHandler
+	//iris.ServiceHandler
 }
 
-type Endpoint interface {
-	Name() string
-	Handler() HandlerFunc
-	Request() interface{}
-}
-
-// TODO Change return type to some kind of response object
-type HandlerFunc func(req Request) (interface{}, error)
-
-type DefaultEndpoint struct {
-	name    string
-	handler HandlerFunc
-	req     interface{}
-}
-
-func (de *DefaultEndpoint) Name() string {
-	return de.name
-}
-
-func (de *DefaultEndpoint) Handler() HandlerFunc {
-	return de.handler
-}
-
-func (de *DefaultEndpoint) Request() interface{} {
-	return de.req
-}
+// TODO Change return type to some kind of response object and add context
+type HandlerFunc func(ctx context.Context, req Request) (interface{}, error)
 
 // Implements iris.ServiceHandler
 type DefaultRegistry struct {
@@ -72,10 +47,14 @@ func InitializeService(name string) error {
 	}
 
 	dr.service = service
-	ServiceRegistry = dr
+	GlobalRegistry = dr
 
 	return err
 
+}
+
+func Register(name string, handler HandlerFunc, req interface{}) error {
+	return GlobalRegistry.Register(name, handler, req)
 }
 
 func (dr *DefaultRegistry) Name() string {
@@ -102,14 +81,6 @@ func (dr *DefaultRegistry) Init(conn *iris.Connection) error {
 	return nil
 }
 
-// Callback invoked whenever a broadcast message arrives designated to the
-// cluster of which this particular service instance is part of.
-func (dr *DefaultRegistry) HandleBroadcast(message []byte) {
-	// Unmarshal the message and check the header
-	// run the handler for that specific endpoint
-	log.Info("broadcast")
-}
-
 // Callback invoked whenever a request designated to the service's cluster is
 // load-balanced to this particular service instance.
 //
@@ -124,57 +95,75 @@ func (dr *DefaultRegistry) HandleRequest(request []byte) ([]byte, error) {
 	in := &message.Request{}
 	err := proto.Unmarshal(request, in)
 	if err != nil {
-		protoRsp := &message.Response{
-			Type: "error",
-			Err: message.Error{
-				Code:      "unmarshal",
-				ErrorText: "Unable to unmarshal request.",
-			},
-		}
-		b, _ := proto.Marshal(protoRsp)
-		return b, nil
+		return WireError(&ServerError{
+			Code:      "internalformat",
+			ErrorText: "Unable to unmarshal internal request object",
+		}), nil
 	}
 
-	ep := ServiceRegistry.GetEndpoint(in.Endpoint)
+	ep := GlobalRegistry.GetEndpoint(in.Endpoint)
 	if ep == nil {
-		protoRsp := &message.Response{
-			Type: "error",
-			Err: message.Error{
-				Code:      "missing",
-				ErrorText: fmt.Sprintf("No endpoint registered for %s", in.Endpoint),
-			},
-		}
-		b, _ := proto.Marshal(protoRsp)
-		return b, nil
+		return WireError(&ServerError{
+			Code:      "missing",
+			ErrorText: fmt.Sprintf("No endpoint registered for %s", in.Endpoint),
+		}), nil
 	}
 
-	handlerRequest := NewRequest(in.Originator, in.Endpoint, in.Body, ep.Request(), in.Headers)
+	handlerRequest, err := NewRequest(in.Originator, in.Endpoint, in.Body, ep.Request(), in.Headers)
+	if err != nil {
+		return WireError(&ServerError{
+			Code:      "requestmarshalling",
+			ErrorText: err.Error(),
+		}), nil
+	}
 
 	// Set the clientside timeout so that handlers can give up in situations they are running long
-	/*to, _ := time.ParseDuration(in.ClientTimeout)
+	to, _ := time.ParseDuration(in.ClientTimeout)
+	ctx := context.Background()
 	if to != 0 {
-		handlerRequest.Context, cancel := context.WithTimeout(context.Background(), to)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, to)
 		defer cancel()
-	}*/
-
-	rsp, err := ep.Handler()(handlerRequest)
-
-	protoRsp := &message.Response{}
-	if err != nil {
-		protoRsp.Type = "error"
-		protoRsp.Err = message.Error{
-			Code:      "internal",
-			ErrorText: err.Error(),
-		}
-	} else {
-		protoRsp.Type = "rsp"
-		rspb, _ := proto.Marshal(rsp.(proto.Message))
-		protoRsp.Body = rspb
 	}
 
-	b, _ := proto.Marshal(protoRsp)
+	rsp, err := ep.Handler()(ctx, handlerRequest)
+	if err != nil {
+		return WireError(&ServerError{
+			Code:      "handler",
+			ErrorText: err.Error(),
+		}), nil
+	}
+
+	protoRsp := &message.Response{
+		Type: "rsp",
+	}
+	rspb, err := proto.Marshal(rsp.(proto.Message))
+	if err != nil {
+		return WireError(&ServerError{
+			Code:      "internalformat",
+			ErrorText: err.Error(),
+		}), nil
+	}
+
+	protoRsp.Body = rspb
+
+	b, err := proto.Marshal(protoRsp)
+	if err != nil {
+		return WireError(&ServerError{
+			Code:      "responseformat",
+			ErrorText: err.Error(),
+		}), nil
+	}
 
 	return b, nil
+}
+
+// Callback invoked whenever a broadcast message arrives designated to the
+// cluster of which this particular service instance is part of.
+func (dr *DefaultRegistry) HandleBroadcast(message []byte) {
+	// Unmarshal the message and check the header
+	// run the handler for that specific endpoint
+	log.Info("broadcast")
 }
 
 // Callback invoked whenever a tunnel designated to the service's cluster is
