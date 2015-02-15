@@ -2,6 +2,9 @@ package server
 
 import (
 	"fmt"
+	"reflect"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -19,6 +22,7 @@ var (
 type Registry interface {
 	Name() string
 	Register(string, HandlerFunc, interface{}) error
+	SimpleRegister(interface{}) error
 	GetEndpoint(string) Endpoint
 	//iris.ServiceHandler
 }
@@ -57,6 +61,10 @@ func Register(name string, handler HandlerFunc, req interface{}) error {
 	return GlobalRegistry.Register(name, handler, req)
 }
 
+func SimpleRegister(handler interface{}) error {
+	return GlobalRegistry.SimpleRegister(handler)
+}
+
 func (dr *DefaultRegistry) Name() string {
 	return dr.name
 }
@@ -68,6 +76,42 @@ func (dr *DefaultRegistry) Register(name string, handler HandlerFunc, req interf
 		req:     req,
 	}
 	return nil
+}
+
+func (dr *DefaultRegistry) SimpleRegister(handler interface{}) error {
+	thandler := reflect.TypeOf(handler)
+	vhandler := reflect.ValueOf(handler)
+	if reflect.Func != vhandler.Kind() {
+		return fmt.Errorf("[ReflectRegister] Must provide function type")
+	}
+	if thandler.NumIn() != 2 {
+		return fmt.Errorf("[ReflectRegister] Must provide 2 inputs to your handler, a context and your request. %v found", thandler.NumIn())
+	}
+
+	if thandler.NumOut() != 2 {
+		return fmt.Errorf("[ReflectRegister] Must provide 2 output from your handler, your response and an error. %v found", thandler.NumOut())
+	}
+
+	fullname := runtime.FuncForPC(vhandler.Pointer()).Name()
+	nameArr := strings.Split(fullname, ".")
+	name := strings.ToLower(nameArr[len(nameArr)-1])
+
+	ep := ReflectEndpoint{
+		name:     name,
+		vhandler: vhandler,
+		req:      thandler.In(1),
+	}
+
+	request := reflect.New(ep.req.Elem())
+	_, ok := request.Interface().(proto.Message)
+	if !ok {
+		return fmt.Errorf("[ReflectRegister] Invalid request type")
+	}
+
+	dr.endpoints[name] = &ep
+
+	return nil
+
 }
 
 func (dr *DefaultRegistry) GetEndpoint(name string) Endpoint {
@@ -109,7 +153,7 @@ func (dr *DefaultRegistry) HandleRequest(request []byte) ([]byte, error) {
 		}), nil
 	}
 
-	handlerRequest, err := NewRequest(in.Originator, in.Endpoint, in.Body, ep.Request(), in.Headers)
+	handlerRequest, err := NewRequest(in.Originator, in.Endpoint, in.Body, in.Headers)
 	if err != nil {
 		return WireError(&ServerError{
 			Code:      "requestmarshalling",

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"github.com/gogo/protobuf/proto"
 	message "github.com/jonomacd/shutter/proto"
 )
 
@@ -11,6 +10,7 @@ type Request interface {
 
 	Data() []byte
 	Request() interface{}
+	SetRequest(i interface{})
 }
 
 type DefaultRequest struct {
@@ -21,20 +21,13 @@ type DefaultRequest struct {
 	req      interface{}
 }
 
-func NewRequest(service, endpoint string, body []byte, reqType interface{}, headers []message.Keyvalue) (Request, error) {
+func NewRequest(service, endpoint string, body []byte, headers []message.Keyvalue) (Request, error) {
 
 	req := &DefaultRequest{
 		service:  service,
 		endpoint: endpoint,
 		body:     body,
 	}
-
-	err := proto.Unmarshal(body, reqType.(proto.Message))
-	if err != nil {
-		return nil, err
-	}
-
-	req.req = reqType
 
 	for _, kv := range headers {
 		req.SetHeader(kv.Key, kv.Value)
@@ -58,4 +51,8 @@ func (dr *DefaultRequest) Data() []byte {
 
 func (dr *DefaultRequest) Request() interface{} {
 	return dr.req
+}
+
+func (dr *DefaultRequest) SetRequest(i interface{}) {
+	dr.req = i
 }

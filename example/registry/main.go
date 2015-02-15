@@ -46,7 +46,7 @@ func send() {
 		return
 	}
 
-	log.Printf("Recieved: %s\n", toGet)
+	log.Printf("Received: %s\n", toGet)
 
 }
 

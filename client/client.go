@@ -53,11 +53,8 @@ func InitializeClient() error {
 // Request sends a request via the GlobalClient
 func Request(service, endpoint string, req, rsp proto.Message, options ...*Options) error {
 	if GlobalClient == nil {
-		// Alternatively we could just do the init for you in this case
-		// and not return an error.  Might make more sense though it is
-		// nice to make people think about using a bespoke client.
-		// InitializeClient()
-		return fmt.Errorf("Global Client Not Initialized")
+		// TODO Need a lock
+		InitializeClient()
 	}
 	return GlobalClient.Request(service, endpoint, req, rsp, options...)
 }
